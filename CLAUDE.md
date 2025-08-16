@@ -1,75 +1,80 @@
-# CLAUDE.md
+# 🚀 CLAUDE.md - Developer Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> **Archon V2 Alpha Development Guidelines**  
+> *Building the future of knowledge management with AI*
 
-## Alpha Development Guidelines
+---
 
-**Local-only deployment** - each user runs their own instance.
+## 🎯 Alpha Development Philosophy
 
-### Core Principles
+### 🏗️ **Local-First Deployment**
+Each developer runs their own instance - no shared environments, no deployment headaches.
 
-- **No backwards compatibility** - remove deprecated code immediately
-- **Detailed errors over graceful failures** - we want to identify and fix issues fast
-- **Break things to improve them** - alpha is for rapid iteration
+### 💡 **Core Principles**
 
-### Error Handling
+| Principle | Description | Why It Matters |
+|-----------|-------------|----------------|
+| 🚫 **No Backwards Compatibility** | Remove deprecated code immediately | Faster iteration, cleaner codebase |
+| 🔍 **Detailed Errors Over Grace** | Expose problems, don't hide them | Quick issue identification and fixes |
+| ⚡ **Break Things to Improve** | Alpha is for rapid experimentation | Innovation over stability |
 
-**Core Principle**: In alpha, we need to intelligently decide when to fail hard and fast to quickly address issues, and when to allow processes to complete in critical services despite failures. Read below carefully and make intelligent decisions on a case-by-case basis.
+---
 
-#### When to Fail Fast and Loud (Let it Crash!)
+## 🛠️ Error Handling Strategy
 
-These errors should stop execution and bubble up immediately:
+> **Golden Rule**: Smart failures - crash when it matters, continue when it doesn't.
 
-- **Service startup failures** - If credentials, database, or any service can't initialize, the system should crash with a clear error
-- **Missing configuration** - Missing environment variables or invalid settings should stop the system
-- **Database connection failures** - Don't hide connection issues, expose them
-- **Authentication/authorization failures** - Security errors must be visible and halt the operation
-- **Data corruption or validation errors** - Never silently accept bad data, Pydantic should raise
-- **Critical dependencies unavailable** - If a required service is down, fail immediately
-- **Invalid data that would corrupt state** - Never store zero embeddings, null foreign keys, or malformed JSON
+### 💥 **When to FAIL FAST** *(Let it crash!)*
 
-#### When to Complete but Log Detailed Errors
+```python
+# ❌ These should STOP everything immediately
+- Service startup failures
+- Missing configuration  
+- Database connection issues
+- Authentication/authorization errors
+- Data corruption or validation failures
+- Critical dependencies unavailable
+- Invalid data that would corrupt state
+```
 
-These operations should continue but track and report failures clearly:
+### ✅ **When to CONTINUE** *(But log everything)*
 
-- **Batch processing** - When crawling websites or processing documents, complete what you can and report detailed failures for each item
-- **Background tasks** - Embedding generation, async jobs should finish the queue but log failures
-- **WebSocket events** - Don't crash on a single event failure, log it and continue serving other clients
-- **Optional features** - If projects/tasks are disabled, log and skip rather than crash
-- **External API calls** - Retry with exponential backoff, then fail with a clear message about what service failed and why
+```python
+# ⚠️ These should complete but track failures
+- Batch processing operations
+- Background tasks (embeddings, async jobs)
+- WebSocket events
+- Optional features
+- External API calls (with retry logic)
+```
 
-#### Critical Nuance: Never Accept Corrupted Data
+### 🚨 **Critical Rule: NEVER Accept Corrupted Data**
 
-When a process should continue despite failures, it must **skip the failed item entirely** rather than storing corrupted data:
-
-**❌ WRONG - Silent Corruption:**
-
+#### ❌ **WRONG - Silent Corruption**
 ```python
 try:
     embedding = create_embedding(text)
 except Exception as e:
-    embedding = [0.0] * 1536  # NEVER DO THIS - corrupts database
+    embedding = [0.0] * 1536  # 💀 CORRUPTS DATABASE!
     store_document(doc, embedding)
 ```
 
-**✅ CORRECT - Skip Failed Items:**
-
+#### ✅ **CORRECT - Skip Failed Items**
 ```python
 try:
     embedding = create_embedding(text)
     store_document(doc, embedding)  # Only store on success
 except Exception as e:
     failed_items.append({'doc': doc, 'error': str(e)})
-    logger.error(f"Skipping document {doc.id}: {e}")
+    logger.error(f"⚠️ Skipping document {doc.id}: {e}")
     # Continue with next document, don't store anything
 ```
 
-**✅ CORRECT - Batch Processing with Failure Tracking:**
-
+#### 🎯 **BEST PRACTICE - Batch Processing**
 ```python
 def process_batch(items):
     results = {'succeeded': [], 'failed': []}
-
+    
     for item in items:
         try:
             result = process_item(item)
@@ -80,203 +85,364 @@ def process_batch(items):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             })
-            logger.error(f"Failed to process {item.id}: {e}")
-
-    # Always return both successes and failures
-    return results
+            logger.error(f"❌ Failed to process {item.id}: {e}")
+    
+    return results  # Always return both successes and failures
 ```
 
-#### Error Message Guidelines
+---
 
-- Include context about what was being attempted when the error occurred
-- Preserve full stack traces with `exc_info=True` in Python logging
-- Use specific exception types, not generic Exception catching
-- Include relevant IDs, URLs, or data that helps debug the issue
-- Never return None/null to indicate failure - raise an exception with details
-- For batch operations, always report both success count and detailed failure list
+## 🏛️ Architecture Overview
 
-### Code Quality
+```mermaid
+graph TB
+    A[🌐 Frontend<br/>React + TypeScript<br/>Port 3737] --> B[🚀 Main Server<br/>FastAPI + Socket.IO<br/>Port 8181]
+    B --> C[🔌 MCP Server<br/>HTTP Protocol<br/>Port 8051]
+    B --> D[🤖 Agents Service<br/>PydanticAI<br/>Port 8052]
+    B --> E[🗄️ Database<br/>Supabase + pgvector]
+```
 
-- Remove dead code immediately rather than maintaining it - no backward compatibility or legacy functions
-- Prioritize functionality over production-ready patterns
-- Focus on user experience and feature completeness
-- When updating code, don't reference what is changing (avoid keywords like LEGACY, CHANGED, REMOVED), instead focus on comments that document just the functionality of the code
+### 📦 **Service Breakdown**
 
-## Architecture Overview
+| Service | Technology | Port | Purpose |
+|---------|------------|------|---------|
+| **Frontend** | React + TypeScript + Vite + Tailwind | 3737 | User interface and experience |
+| **Main Server** | FastAPI + Socket.IO | 8181 | API endpoints and real-time updates |
+| **MCP Server** | HTTP-based MCP protocol | 8051 | Model Context Protocol integration |
+| **Agents Service** | PydanticAI | 8052 | AI/ML operations and agents |
+| **Database** | Supabase (PostgreSQL + pgvector) | - | Data storage and vector search |
 
-Archon V2 Alpha is a microservices-based knowledge management system with MCP (Model Context Protocol) integration:
+---
 
-- **Frontend (port 3737)**: React + TypeScript + Vite + TailwindCSS
-- **Main Server (port 8181)**: FastAPI + Socket.IO for real-time updates
-- **MCP Server (port 8051)**: Lightweight HTTP-based MCP protocol server
-- **Agents Service (port 8052)**: PydanticAI agents for AI/ML operations
-- **Database**: Supabase (PostgreSQL + pgvector for embeddings)
+## ⚡ Development Commands
 
-## Development Commands
-
-### Frontend (archon-ui-main/)
+### 🎨 **Frontend Commands** *(archon-ui-main/)*
 
 ```bash
-npm run dev              # Start development server on port 3737
-npm run build            # Build for production
-npm run lint             # Run ESLint
+# 🚀 Development
+npm run dev              # Start dev server (port 3737)
+npm run build            # Production build
+npm run preview          # Preview production build
+
+# 🔍 Quality Assurance  
+npm run lint             # ESLint checks
 npm run test             # Run Vitest tests
-npm run test:coverage    # Run tests with coverage report
+npm run test:coverage    # Coverage report
+npm run test:ui          # Interactive test UI
 ```
 
-### Backend (python/)
+### 🐍 **Backend Commands** *(python/)*
 
 ```bash
-# Using uv package manager
+# 📦 Package Management (using uv)
 uv sync                  # Install/update dependencies
-uv run pytest            # Run tests
-uv run python -m src.server.main  # Run server locally
+uv add package-name      # Add new dependency
+uv remove package-name   # Remove dependency
 
-# With Docker
-docker-compose up --build -d       # Start all services
-docker-compose logs -f             # View logs
-docker-compose restart              # Restart services
+# 🏃 Running Services
+uv run python -m src.server.main     # Run server locally
+uv run pytest                        # Run all tests
+uv run pytest tests/test_api_essentials.py -v  # Specific tests
+
+# 🐳 Docker Operations
+docker-compose up --build -d         # Start all services
+docker-compose logs -f               # View real-time logs
+docker-compose restart               # Restart services
+docker-compose down                  # Stop all services
 ```
 
-### Testing
+---
 
-```bash
-# Frontend tests (from archon-ui-main/)
-npm run test:coverage:stream       # Run with streaming output
-npm run test:ui                    # Run with Vitest UI
+## 📡 API Endpoints Reference
 
-# Backend tests (from python/)
-uv run pytest tests/test_api_essentials.py -v
-uv run pytest tests/test_service_integration.py -v
+### 🧠 **Knowledge Base**
+```http
+POST /api/knowledge/crawl      # 🕷️ Crawl a website
+POST /api/knowledge/upload     # 📄 Upload documents (PDF, DOCX, MD)
+GET  /api/knowledge/items      # 📋 List knowledge items
+POST /api/knowledge/search     # 🔍 RAG search
 ```
 
-## Key API Endpoints
+### 🔌 **MCP Integration**
+```http
+GET  /api/mcp/health           # ❤️ MCP server status
+POST /api/mcp/tools/{tool}     # 🛠️ Execute MCP tool
+GET  /api/mcp/tools            # 📝 List available tools
+```
 
-### Knowledge Base
+### 📊 **Projects & Tasks** *(Optional)*
+```http
+GET  /api/projects             # 📋 List projects
+POST /api/projects             # ➕ Create project
+GET  /api/projects/{id}/tasks  # 📝 Get project tasks  
+POST /api/projects/{id}/tasks  # ✨ Create task
+```
 
-- `POST /api/knowledge/crawl` - Crawl a website
-- `POST /api/knowledge/upload` - Upload documents (PDF, DOCX, MD)
-- `GET /api/knowledge/items` - List knowledge items
-- `POST /api/knowledge/search` - RAG search
+---
 
-### MCP Integration
+## 🔄 Real-Time Events (Socket.IO)
 
-- `GET /api/mcp/health` - MCP server status
-- `POST /api/mcp/tools/{tool_name}` - Execute MCP tool
-- `GET /api/mcp/tools` - List available tools
+| Event | Purpose | Data |
+|-------|---------|------|
+| `crawl_progress` | 🕷️ Website crawling updates | Progress percentage, current URL |
+| `project_creation_progress` | 📊 Project setup status | Setup steps, completion status |
+| `task_update` | ✅ Task status changes | Task ID, new status, metadata |
+| `knowledge_update` | 🧠 Knowledge base changes | Added/updated items, source info |
 
-### Projects & Tasks (when enabled)
+---
 
-- `GET /api/projects` - List projects
-- `POST /api/projects` - Create project
-- `GET /api/projects/{id}/tasks` - Get project tasks
-- `POST /api/projects/{id}/tasks` - Create task
+## 🌍 Environment Configuration
 
-## Socket.IO Events
-
-Real-time updates via Socket.IO on port 8181:
-
-- `crawl_progress` - Website crawling progress
-- `project_creation_progress` - Project setup progress
-- `task_update` - Task status changes
-- `knowledge_update` - Knowledge base changes
-
-## Environment Variables
-
-Required in `.env`:
-
+### ✅ **Required Variables**
 ```bash
+# 🗄️ Database Connection
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-service-key-here
 ```
 
-Optional:
-
+### ⚙️ **Optional Variables**
 ```bash
+# 🤖 AI Integration
 OPENAI_API_KEY=your-openai-key        # Can be set via UI
-LOGFIRE_TOKEN=your-logfire-token      # For observability
-LOG_LEVEL=INFO                         # DEBUG, INFO, WARNING, ERROR
+
+# 📊 Monitoring & Logging
+LOGFIRE_TOKEN=your-logfire-token      # Observability platform
+LOG_LEVEL=INFO                        # DEBUG, INFO, WARNING, ERROR
+
+# 🔧 Development
+NODE_ENV=development                  # Frontend environment
+PYTHON_ENV=development                # Backend environment
 ```
 
-## File Organization
+---
 
-### Frontend Structure
+## 📁 Project Structure
 
-- `src/components/` - Reusable UI components
-- `src/pages/` - Main application pages
-- `src/services/` - API communication and business logic
-- `src/hooks/` - Custom React hooks
-- `src/contexts/` - React context providers
+### 🎨 **Frontend Structure**
+```
+archon-ui-main/
+├── 🧩 src/components/     # Reusable UI components
+├── 📄 src/pages/          # Main application pages  
+├── 🔧 src/services/       # API communication
+├── 🪝 src/hooks/          # Custom React hooks
+├── 🎯 src/contexts/       # React context providers
+├── 🎨 src/styles/         # CSS and styling
+└── ⚡ src/utils/          # Helper functions
+```
 
-### Backend Structure
+### 🐍 **Backend Structure**
+```
+python/
+├── 🚀 src/server/         # Main FastAPI application
+├── 📡 src/server/api_routes/  # API route handlers
+├── 🏗️ src/server/services/   # Business logic services
+├── 🔌 src/mcp/            # MCP server implementation
+├── 🤖 src/agents/         # PydanticAI agent implementations
+├── 🗄️ src/database/       # Database models and migrations
+└── 🧪 tests/              # Test suites
+```
 
-- `src/server/` - Main FastAPI application
-- `src/server/api_routes/` - API route handlers
-- `src/server/services/` - Business logic services
-- `src/mcp/` - MCP server implementation
-- `src/agents/` - PydanticAI agent implementations
+---
 
-## Database Schema
+## 🗄️ Database Schema
 
-Key tables in Supabase:
+### 📊 **Key Tables**
 
-- `sources` - Crawled websites and uploaded documents
-- `documents` - Processed document chunks with embeddings
-- `projects` - Project management (optional feature)
-- `tasks` - Task tracking linked to projects
-- `code_examples` - Extracted code snippets
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| `sources` | 🌐 Crawled websites & uploads | url, type, status, metadata |
+| `documents` | 📄 Processed chunks + embeddings | content, embedding, source_id |
+| `projects` | 📊 Project management | name, description, status |
+| `tasks` | ✅ Task tracking | title, status, project_id, assignee |
+| `code_examples` | 💻 Extracted code snippets | language, code, description |
 
-## Common Development Tasks
+---
 
-### Add a new API endpoint
+## 🚀 Common Development Workflows
 
-1. Create route handler in `python/src/server/api_routes/`
-2. Add service logic in `python/src/server/services/`
-3. Include router in `python/src/server/main.py`
-4. Update frontend service in `archon-ui-main/src/services/`
+### ➕ **Adding a New API Endpoint**
 
-### Add a new UI component
+1. **📝 Create Route Handler**
+   ```python
+   # python/src/server/api_routes/new_feature.py
+   from fastapi import APIRouter
+   
+   router = APIRouter()
+   
+   @router.get("/new-endpoint")
+   async def new_endpoint():
+       return {"message": "Hello World"}
+   ```
 
-1. Create component in `archon-ui-main/src/components/`
-2. Add to page in `archon-ui-main/src/pages/`
-3. Include any new API calls in services
-4. Add tests in `archon-ui-main/test/`
+2. **🏗️ Add Service Logic**
+   ```python
+   # python/src/server/services/new_service.py
+   class NewService:
+       async def process_data(self, data):
+           # Business logic here
+           return processed_data
+   ```
 
-### Debug MCP connection issues
+3. **🔗 Register Router**
+   ```python
+   # python/src/server/main.py
+   from api_routes.new_feature import router as new_router
+   app.include_router(new_router, prefix="/api")
+   ```
 
-1. Check MCP health: `curl http://localhost:8051/health`
-2. View MCP logs: `docker-compose logs archon-mcp`
-3. Test tool execution via UI MCP page
-4. Verify Supabase connection and credentials
+4. **🎨 Update Frontend Service**
+   ```typescript
+   // archon-ui-main/src/services/newService.ts
+   export const callNewEndpoint = async () => {
+     const response = await api.get('/new-endpoint');
+     return response.data;
+   };
+   ```
 
-## Code Quality Standards
+### 🎨 **Adding a New UI Component**
 
-We enforce code quality through automated linting and type checking:
+1. **🧩 Create Component**
+   ```tsx
+   // archon-ui-main/src/components/NewComponent.tsx
+   export const NewComponent = () => {
+     return <div>New Component</div>;
+   };
+   ```
 
+2. **📄 Add to Page**
+   ```tsx
+   // archon-ui-main/src/pages/HomePage.tsx
+   import { NewComponent } from '../components/NewComponent';
+   ```
+
+3. **🧪 Add Tests**
+   ```typescript
+   // archon-ui-main/test/components/NewComponent.test.tsx
+   import { render } from '@testing-library/react';
+   import { NewComponent } from '../../src/components/NewComponent';
+   ```
+
+---
+
+## 🔧 Debugging & Troubleshooting
+
+### 🔌 **MCP Connection Issues**
+
+```bash
+# 1. Check MCP Health
+curl http://localhost:8051/health
+
+# 2. View MCP Logs
+docker-compose logs archon-mcp
+
+# 3. Test Tool Execution
+# Use the MCP page in the UI
+
+# 4. Verify Database Connection
+# Check Supabase credentials in .env
+```
+
+### 📊 **Common Debug Commands**
+
+```bash
+# 🐍 Backend Debugging
+uv run python -c "import src.server.main; print('Backend OK')"
+uv run pytest tests/ -v --tb=short
+
+# 🎨 Frontend Debugging  
+npm run lint -- --fix
+npm run test -- --reporter=verbose
+
+# 🐳 Docker Debugging
+docker-compose ps                    # Check service status
+docker-compose logs --tail=50        # Recent logs
+docker system prune                  # Clean up resources
+```
+
+---
+
+## ⚡ Code Quality Standards
+
+### 🐍 **Python Standards**
 - **Python 3.12** with 120 character line length
-- **Ruff** for linting - checks for errors, warnings, unused imports, and code style
-- **Mypy** for type checking - ensures type safety across the codebase
-- **Auto-formatting** on save in IDEs to maintain consistent style
-- Run `uv run ruff check` and `uv run mypy src/` locally before committing
+- **Ruff** for linting - errors, warnings, unused imports
+- **Mypy** for type checking - ensures type safety
+- **Auto-formatting** on save in IDEs
 
-## MCP Tools Available
+```bash
+# 🔍 Quality Checks
+uv run ruff check                    # Linting
+uv run ruff check --fix              # Auto-fix issues  
+uv run mypy src/                     # Type checking
+```
 
-When connected to Cursor/Windsurf:
+### 🎨 **Frontend Standards**
+- **TypeScript** strict mode enabled
+- **ESLint** with React hooks rules
+- **Prettier** for consistent formatting
+- **Vitest** for unit testing
 
-- `archon:perform_rag_query` - Search knowledge base
-- `archon:search_code_examples` - Find code snippets
-- `archon:manage_project` - Project operations
-- `archon:manage_task` - Task management
-- `archon:get_available_sources` - List knowledge sources
+```bash
+# 🔍 Quality Checks
+npm run lint                         # ESLint check
+npm run lint -- --fix               # Auto-fix issues
+npm run type-check                   # TypeScript check
+```
 
-## Important Notes
+---
 
-- Projects feature is optional - toggle in Settings UI
-- All services communicate via HTTP, not gRPC
-- Socket.IO handles all real-time updates
-- Frontend uses Vite proxy for API calls in development
-- Python backend uses `uv` for dependency management
-- Docker Compose handles service orchestration
+## 🛠️ Available MCP Tools
 
-ADDITIONAL CONTEXT FOR SPECIFICALLY HOW TO USE ARCHON ITSELF:
-@CLAUDE-ARCHON.md
+> **When connected to Cursor/Windsurf IDE**
+
+| Tool | Purpose | Usage |
+|------|---------|-------|
+| `archon:perform_rag_query` | 🔍 Search knowledge base | Find relevant documents and content |
+| `archon:search_code_examples` | 💻 Find code snippets | Locate specific code patterns |
+| `archon:manage_project` | 📊 Project operations | Create, update, delete projects |
+| `archon:manage_task` | ✅ Task management | Handle task lifecycle |
+| `archon:get_available_sources` | 📋 List knowledge sources | See what's in the knowledge base |
+
+---
+
+## ⚠️ Important Notes & Tips
+
+### 💡 **Key Features**
+- ✅ **Projects feature is optional** - toggle in Settings UI
+- ✅ **All services use HTTP** - no gRPC complexity
+- ✅ **Socket.IO handles real-time** - seamless live updates
+- ✅ **Vite proxy for development** - no CORS issues
+- ✅ **UV for Python deps** - fast, reliable package management
+- ✅ **Docker Compose orchestration** - one command to rule them all
+
+### 🚀 **Quick Start Checklist**
+1. ✅ Clone repository
+2. ✅ Set up `.env` file with Supabase credentials
+3. ✅ Run `docker-compose up --build -d`
+4. ✅ Navigate to `http://localhost:3737`
+5. ✅ Configure OpenAI API key in Settings
+6. ✅ Start building amazing features!
+
+---
+
+## 📞 Getting Help
+
+### 🔗 **Useful Links**
+- 📚 **Documentation**: Check inline code comments
+- 🐳 **Docker Issues**: `docker-compose logs [service-name]`
+- 🗄️ **Database Issues**: Check Supabase dashboard
+- 🔌 **MCP Issues**: Test via `/api/mcp/health` endpoint
+
+### 🆘 **Emergency Commands**
+```bash
+# 🔥 Nuclear option - reset everything
+docker-compose down --volumes --remove-orphans
+docker-compose up --build -d
+
+# 🧹 Clean slate - remove all containers and images  
+docker system prune -a --volumes
+```
+
+---
+
+*Happy coding! 🚀 Build something amazing with Archon V2 Alpha!*
